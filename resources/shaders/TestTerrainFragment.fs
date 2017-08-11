@@ -2,7 +2,7 @@
 in vec3 texCoord0;
 in vec3 Normal;
 in vec3 pos;
-
+in float Amb;
 uniform sampler2DArray sampler2d;
 uniform float amb;
 struct Attenuation{
@@ -18,28 +18,28 @@ struct PointLight{
 	Attenuation attenuation;
 };
 struct DiffuseLight{
-	vec3 color;
+	float color;
 	float coeff;
 };
-in PointLight point_light;
-in DiffuseLight diff_light;
+uniform PointLight testlight;
+uniform DiffuseLight difflight;
 
 
-
-vec4 calcPoint(PointLight pointLight, vec3 Pos, vec3 normal){
+vec4 calcPointLight(PointLight pointLight, vec3 Pos, vec3 normal){
 	vec3 to_Light = pointLight.position - Pos;
 	float distance = length(to_Light);
 	vec3 lightDir = normalize(to_Light);
 	float attenuationFactor = 1f/(pointLight.attenuation.constant+pointLight.attenuation.linear*distance + pointLight.attenuation.exponential*distance*distance);
 	float diffusePart = max(dot(lightDir,normal),0)*pointLight.intensity;
-	return texture(sampler2d,texCoord0)*pointLight.attenuation.constant;//+diffusePart*vec4(pointLight.color,1)*attenuationFactor;
+	return diffusePart*vec4(pointLight.color,1)*attenuationFactor;
 }
 
 
 
 void main(){
-	gl_FragColor = calcPoint(point_light,pos,Normal);
-//	gl_FragColor = texture(sampler2d,texCoord0)*amb;
+//	gl_FragColor = calcPoint(testlight,pos,Normal);
+	vec4 texColor = texture(sampler2d,texCoord0);
+//	gl_FragColor = texColor*calcPointLight(point_light,pos,Normal);
+	gl_FragColor = texColor*(vec4(difflight.coeff)+calcPointLight(testlight,pos,Normal));
 }
-
 
