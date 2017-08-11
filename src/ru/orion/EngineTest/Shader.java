@@ -1,4 +1,4 @@
-package ru.orion.EngineTest;
+package ru.orion.sandbox;
 
 import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL32.*;
@@ -13,10 +13,12 @@ import org.lwjgl.system.MemoryStack;
 import static org.lwjgl.system.MemoryStack.*;
 
 public class Shader {
+	private Vector3f tempVec;
 	private int ShaderProgram;
 	private HashMap<String,Integer> uniforms;
 	
 	public Shader() {
+		tempVec = new Vector3f();
 		ShaderProgram = glCreateProgram();
 		if (ShaderProgram == 0) {
 			System.err.println("Failed to create program");
@@ -92,6 +94,37 @@ public class Shader {
 			//buffer.flip();
 			glUniformMatrix4fv(uniforms.get(uniform), false, buffer);
 		}
+	}
+	
+	public void addDiffLight(String light) {
+		addUniform(light + ".color");
+		addUniform(light + ".coeff");
+		
+	}
+	public void setDiffLight(String lightName, DiffuseLight light) {
+//		setUniformVec3f(lightName + ".color",light.getColor());
+		setUniformf(lightName + ".color",1f);
+		setUniformf(lightName + ".coeff",light.getCoeff());
+		
+	}
+	public void addPointLight(String light) {
+		addUniform(light + ".position");
+		addUniform(light + ".color");
+		addUniform(light + ".intensity");
+		addUniform(light + ".attenuation.constant");
+		addUniform(light + ".attenuation.linear");
+		addUniform(light + ".attenuation.exponential");
+		
+	}
+	public void setPointLight(String lightName, PointLight light,Matrix4f tv) {
+		light.getPosition().mulPosition(tv, tempVec);
+		setUniformVec3f(lightName + ".position",tempVec);
+		setUniformVec3f(lightName + ".color",light.getColor());
+		setUniformf(lightName + ".intensity",light.getIntensity());
+//		PointLight
+		setUniformf(lightName + ".attenuation.linear",light.getAttenuation().getLinear());
+		setUniformf(lightName + ".attenuation.exponential",light.getAttenuation().getExponential());
+		setUniformf(lightName + ".attenuation.constant",light.getAttenuation().getConstant());
 	}
 	
 	public void updateUniforms() {
