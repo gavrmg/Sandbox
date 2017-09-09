@@ -1,7 +1,7 @@
 package ru.orion.sandbox.Renderer;
 
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
+import javax.vecmath.Matrix4f;
+import javax.vecmath.Vector3f;
 
 import ru.orion.sandbox.ResourceLoader;
 

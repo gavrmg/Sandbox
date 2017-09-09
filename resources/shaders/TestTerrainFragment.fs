@@ -30,7 +30,8 @@ vec4 calcPointLight(PointLight pointLight, vec3 Pos, vec3 normal){
 	float distance = length(to_Light);
 	vec3 lightDir = normalize(to_Light);
 	float attenuationFactor = 1f/(pointLight.attenuation.constant+pointLight.attenuation.linear*distance + pointLight.attenuation.exponential*distance*distance);
-	float diffusePart = max(dot(lightDir,normal),0)*pointLight.intensity;
+//	float diffusePart = max(dot(lightDir,normal),dot(lightDir,-normal))*pointLight.intensity;
+	float diffusePart = clamp(dot(lightDir,normal),0,1)*pointLight.intensity;
 	return diffusePart*vec4(pointLight.color,1)*attenuationFactor;
 }
 
@@ -40,6 +41,6 @@ void main(){
 //	gl_FragColor = calcPoint(testlight,pos,Normal);
 	vec4 texColor = texture(sampler2d,texCoord0);
 //	gl_FragColor = texColor*calcPointLight(point_light,pos,Normal);
-	gl_FragColor = texColor*(vec4(difflight.coeff)+calcPointLight(testlight,pos,Normal));
+	gl_FragColor = clamp(texColor*(vec4(difflight.coeff)+calcPointLight(testlight,pos,Normal)),vec4(0),vec4(1));
 }
 

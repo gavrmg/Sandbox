@@ -10,8 +10,9 @@ public class RenderUtils {
 		//glEnable(GL_CULL_FACE);
 		glEnable(GL_TEXTURE_2D);
 		glEnable(GL_DEPTH_TEST);
+		//glEnable(GL_)
 		glClearColor(0,0,0,0);
-
+		//glDraw;
 	}
 	
 	public static void clearScreen() {

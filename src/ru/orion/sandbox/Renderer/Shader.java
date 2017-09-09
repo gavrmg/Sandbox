@@ -6,19 +6,28 @@ import static org.lwjgl.opengl.GL32.*;
 import java.nio.FloatBuffer;
 import java.util.HashMap;
 
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
+import javax.vecmath.Matrix4f;
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
+import javax.vecmath.Vector3f;
 import org.lwjgl.system.MemoryStack;
 
 import static org.lwjgl.system.MemoryStack.*;
 
+/*
+ * Basic shader class which performs shader parsing, compilation and linking
+ * Vertex shader is added by using addVertexShader(String ShaderCode)
+ * Geometry                        addGeometryShader(String ShaderCode)
+ * Fragment                        addFragmentShader(String ShaderCode)    
+ */
+
 public class Shader {
-	private Vector3f tempVec;
+	private Point3f tempVec;
 	private int ShaderProgram;
 	private HashMap<String,Integer> uniforms;
 	
 	public Shader() {
-		tempVec = new Vector3f();
+		tempVec = new Point3f();
 		ShaderProgram = glCreateProgram();
 		if (ShaderProgram == 0) {
 			System.err.println("Failed to create program");
@@ -84,14 +93,16 @@ public class Shader {
 	public void setUniformf(String uniform, float value) {
 		glUniform1f(uniforms.get(uniform), value);
 	}
-	public void setUniformVec3f(String uniform, Vector3f value) {
+	public void setUniformVec3f(String uniform, Tuple3f value) {
 		glUniform3f(uniforms.get(uniform), value.x, value.y, value.z);
 	}
 	public void setUniformMatrix4f(String uniform, Matrix4f value) {
 		try(MemoryStack stack = stackPush()){
 			FloatBuffer buffer = stack.mallocFloat(16);
-			value.get(buffer);
-			//buffer.flip();
+			for(int i = 0; i < 4;i++)
+				for(int j = 0; j < 4; j++)
+					buffer.put(value.getElement(j, i));
+			buffer.flip();
 			glUniformMatrix4fv(uniforms.get(uniform), false, buffer);
 		}
 	}
@@ -117,7 +128,8 @@ public class Shader {
 		
 	}
 	public void setPointLight(String lightName, PointLight light,Matrix4f tv) {
-		light.getPosition().mulPosition(tv, tempVec);
+		//light.getPosition().(tv, tempVec);
+		tv.transform(light.getPosition(), tempVec);
 		setUniformVec3f(lightName + ".position",tempVec);
 		setUniformVec3f(lightName + ".color",light.getColor());
 		setUniformf(lightName + ".intensity",light.getIntensity());

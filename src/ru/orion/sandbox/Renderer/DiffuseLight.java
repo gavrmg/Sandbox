@@ -1,6 +1,6 @@
 package ru.orion.sandbox.Renderer;
 
-import org.joml.Vector3f;
+import javax.vecmath.Vector3f;
 
 public class DiffuseLight {
 	private float coeff;//0 - 1;

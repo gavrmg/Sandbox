@@ -1,9 +1,9 @@
 package ru.orion.sandbox.Renderer;
 
-import org.joml.Vector3f;
+import javax.vecmath.*;
 
 public class PointLight {
-	private Vector3f Position;
+	private Point3f Position;
 	private Vector3f Color;
 	private float intensity;
 	
@@ -14,31 +14,31 @@ public class PointLight {
 	
 	
 	public PointLight(float px,float py,float pz,float cx,float cy,float cz, float constant,float linear, float exponential,float intensity) {
-		Position = new Vector3f(px,py,pz);
+		Position = new Point3f(px,py,pz);
 		Color = new Vector3f(cx,cy,cz);
 		this.intensity = intensity;
 		this.attenuation= new Attenuation(constant,linear,exponential);
 	}
 	
 	public PointLight(PointLight pointLight) {
-		Position = new Vector3f(pointLight.getPosition());
+		Position = new Point3f(pointLight.getPosition());
 		Color = new Vector3f(pointLight.getColor());
 		this.intensity = pointLight.getIntensity();
 		this.attenuation= new Attenuation(this.attenuation);
 	}
 	
-	public PointLight(Vector3f pos, Vector3f color, float linear, float exponential) {
+	public PointLight(Point3f pos, Vector3f color, float linear, float exponential) {
 		Position = pos;
 		Color = color;
 //		this.linear = linear;
 //		this.exponential = exponential;
 	}
 
-	public Vector3f getPosition() {
+	public Point3f getPosition() {
 		return Position;
 	}
 
-	public void setPosition(Vector3f position) {
+	public void setPosition(Point3f position) {
 		Position = position;
 	}
 

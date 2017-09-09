@@ -155,6 +155,33 @@ public class ResourceLoader {
 		}
 		return builder.toString();
 	}
+	public static String LoadKernel(String fileName) {
+		StringBuilder builder = new StringBuilder();
+		BufferedReader reader = null;
+		String currentLine = null;
+
+		try {
+			reader = new BufferedReader(new FileReader("./resources/kernels/"+fileName));
+		} catch (FileNotFoundException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+			System.err.println("Unable to create a buffered reader");
+			System.exit(1);
+		}
+		
+		try {
+			while ((currentLine = reader.readLine())!=null) {
+				builder.append(currentLine).append("\n");
+			}
+			reader.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			System.err.println("Unable to add a line");
+			System.exit(1);
+		}
+		return builder.toString();
+	}
 	
 	/*public static Mesh loadMeshObj(String fileName) {
 		BufferedReader reader = null;
