@@ -1,0 +1,21 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "TestLevelScriptActor.h"
+#include "Region.h"
+#include "Generator.h"
+#include "PlayerCharacter.h"
+
+void ATestLevelScriptActor::SetupLevel()
+{
+	UWorld* world = GetWorld();
+	Generator = world->SpawnActor<AGenerator>();
+	for(int i = -4; i < 4; i++)
+		for(int j = -4; j < 4; j++)
+			Generator->GenerateHeightMap(FVector(i,j,0)*12800);
+	ARegion * Region = world->SpawnActor<ARegion>(FVector::ZeroVector, FRotator::ZeroRotator);
+	APlayerCharacter* PlayerCharacter = world->SpawnActor<APlayerCharacter>(FVector(0, 0, 14500), FRotator::ZeroRotator);
+	PlayerCharacter->CharacterDigEvent.AddUObject(Region, &ARegion::DigEvent_Implementation);
+	world->GetFirstPlayerController()->Possess(PlayerCharacter);
+//	PlayerCharacter->
+	//	PlayerCharacter->SetupPlayerInputComponent(world->GetFirstPlayerController);
+}
