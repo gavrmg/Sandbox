@@ -31,7 +31,7 @@ void AGenerator::Tick(float DeltaTime)
 	int ChunkResolution = BaseResolution;
 	float VoxelSize = BaseVoxelSize;
 	int HeightMapResolution = resolution;
-
+	map->SetTimeStamp(FDateTime::MinValue());
 	FVector NormalizedPos = (Position / (VoxelSize*ChunkResolution)) * HeightMapResolution;
 	FVector2D NormalizedPosPlanar;
 	for(int i = 0; i <= HeightMapResolution; i++)

@@ -89,13 +89,16 @@ void ARegion::InitRegion() {
 void ARegion::DigEvent_Implementation(FVector Position) {
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("MyEventRecieved!"));
 	UWorld* world = GetWorld();
-	ITerrainObjectInterface* Obj = world->SpawnActor<ASphereDestructionObject>(Position, FRotator::ZeroRotator);
 	FActorSpawnParameters params;
 	params.bAllowDuringConstructionScript = false;
 	params.bNoFail = true;
 	params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	((AActor*) Obj)->DispatchBeginPlay();
+	ITerrainObjectInterface* Obj = world->SpawnActor<ASphereDestructionObject>(Position, FRotator::ZeroRotator,params);
+	Obj->SetTimeStamp(FDateTime::Now());
+	if (Obj == nullptr) {
+		int k = 0;
+	}
+//	((AActor*) Obj)->DispatchBeginPlay();
 	handler->Init(GetTransform().GetTranslation());
 //	handler->ObjectsContainer.Build(RegionVolume);
 	for (AChunkMesh* chunk : Chunks) {

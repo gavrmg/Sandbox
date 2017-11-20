@@ -41,6 +41,7 @@ void AWorldObjectsHandler::Init(const FVector & Position)
 			}
 		}
 	}
+	objs->Sort([]( ITerrainObjectInterface& A,  ITerrainObjectInterface& B)->bool{return (A.GetTimeStamp() > B.GetTimeStamp()); });
 	for (ITerrainObjectInterface* obj : *objs) {
 		InsertionObjectsList.push_front(obj);
 	}

@@ -159,6 +159,7 @@ void AChunkMesh::ConstructMesh() {
 	}
 	//Calculate values at grid points
 	CSG_TYPE_ENUM CurrentCSGOp;//Which SCG operation should be executed
+	FDateTime  previousTimeStamp;
 	for (CurrentPos.X = 0; CurrentPos.X < resolution+2; CurrentPos.X++)
 		for (CurrentPos.Y = 0; CurrentPos.Y < resolution+2; CurrentPos.Y++)
 			for (CurrentPos.Z = 0; CurrentPos.Z < resolution+2; CurrentPos.Z++) {
@@ -166,26 +167,34 @@ void AChunkMesh::ConstructMesh() {
 				previous = MAX_FLT;
 				currentObject = nullptr;
 				FVector pos = ((CurrentPos-32)*UnitPerVoxel) + ChunkBounds.GetCenter();
+				previousTimeStamp = FDateTime::MinValue();
 				for (ITerrainObjectInterface* obj : Objects) {
 					current = (obj->CalculateSignedDistanceFunction(pos));
 					CurrentCSGOp = obj->GetCSGType();
-					switch (CurrentCSGOp) {
-						case CSG_TYPE_ENUM::CSG_OR: {
-							if (current <= previous) {
-								previous = current;
-								currentObject = obj;
+						switch (CurrentCSGOp) {
+							case CSG_TYPE_ENUM::CSG_OR: {
+								if (current < previous) {
+									if (obj->GetTimeStamp() >= previousTimeStamp) {
+										previousTimeStamp = obj->GetTimeStamp();
+										previous = current;
+										currentObject = obj;
+									}
+								}
+								break;
 							}
-							break;
-						}
-						case CSG_TYPE_ENUM::CSG_DIFF: {
-							if ((-current) >= previous) {
-								previous = -current;
-								currentObject = obj;
+							case CSG_TYPE_ENUM::CSG_DIFF: {
+								if ((-current) > previous) {
+									if (obj->GetTimeStamp() >= previousTimeStamp) {
+										previousTimeStamp = obj->GetTimeStamp();
+										currentObject = obj;
+										previous = -current;
+									}
+								}
+								break;
 							}
-							break;
 						}
 					}
-				}
+				
 				grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value = previous;
 				grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Object = currentObject;
 				if (pos.Z < 6400)
@@ -287,6 +296,8 @@ void AChunkMesh::ConstructMesh() {
 	//Build mesh
 	//There we only use edges from 1 to 64, as the zero edge is used in the previous chunk, and resolution+1th edge has voxels lying in the next chunk
 	int MaterialCount = 0;
+	if(Mesh->GetNumSections()!=0)
+		rebuilding = true;
 	for (UMaterial* material : MaterialList) {
 		TArray<FVector>* Vertecies = new TArray<FVector>();
 		TArray<int32>* Indecies = new TArray<int32>();
@@ -294,8 +305,8 @@ void AChunkMesh::ConstructMesh() {
 		TArray<FVector2D>* UVs = new TArray<FVector2D>();
 		TArray<FLinearColor>* Colors = new TArray<FLinearColor>();
 		TArray<FProcMeshTangent>* Tangents = new TArray<FProcMeshTangent>();
-		if((Mesh->GetNumSections()!=0) &&(Mesh->GetProcMeshSection(MaterialCount)!=nullptr))
-			Mesh->GetProcMeshSection(MaterialCount)->Reset();
+/*		if((Mesh->GetNumSections()!=0) &&(Mesh->GetProcMeshSection(MaterialCount)!=nullptr))
+			Mesh->GetProcMeshSection(MaterialCount)->Reset();*/
 		for (int Direction = 0; Direction < 3; Direction++) {
 			temp.Set(0, 0, 0);
 			temp.Component(Direction) = 1;
@@ -337,13 +348,18 @@ void AChunkMesh::ConstructMesh() {
 						}
 					}
 		}
-		Mesh->CreateMeshSection_LinearColor(MaterialCount, *Vertecies, *Indecies, *Normals, *UVs, *Colors, *Tangents, true);
+		if (rebuilding) {
+	//		Mesh->ClearMeshSection(MaterialCount);
+			Mesh->CreateMeshSection_LinearColor(MaterialCount, *Vertecies, *Indecies, *Normals, *UVs, *Colors, *Tangents, true);
+		}
+		else {
+			Mesh->CreateMeshSection_LinearColor(MaterialCount, *Vertecies, *Indecies, *Normals, *UVs, *Colors, *Tangents, true);
+		}
 		Mesh->SetMaterial(MaterialCount, MaterialList[MaterialCount]);
 		MaterialCount++;
 
 	}
-	if (!built)
-		built = true;
+	rebuilding = false;
 //	Normals->SetNumZeroed(Vertecies->Num());
 //	Colors->SetNumZeroed(Vertecies->Num());
 //	UVs->SetNumZeroed(Vertecies->Num());
@@ -387,4 +403,7 @@ void AChunkMesh::ConstructMesh() {
 
 }
 
-
+uint32 AChunkMesh::MeshSectionUpdateThread::Run()
+{
+	return uint32();
+}

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "PlayerCharacter.h"
+#include "Windows.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -61,6 +62,8 @@ void APlayerCharacter::LookUpAtRate(float Rate)
 
 void APlayerCharacter::Dig()
 {
+	SYSTEMTIME start, stop;
+	GetSystemTime(&start);
 	FVector CameraLoc;
 	FRotator CameraRot;
 	GetActorEyesViewPoint(CameraLoc, CameraRot);
@@ -77,8 +80,9 @@ void APlayerCharacter::Dig()
 
 	if (GetWorld()->LineTraceSingleByObjectType(HitResult, Start, End, QueryObjectParams, QueryParams)) {
 		CharacterDigEvent.Broadcast(HitResult.Location);
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, HitResult.Location.ToCompactString());
 	}
+	GetSystemTime(&stop);
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::FromInt(stop.wMilliseconds-start.wMilliseconds));
 }
 
 // Called every frame

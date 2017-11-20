@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
 #include "TerrainObjectInterface.h"
+//#include "Windows.h"
 #include "ChunkMesh.generated.h"
 
 const int BaseResolution = 64;
@@ -22,7 +23,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		class UProceduralMeshComponent* Mesh;
-		TArray<ITerrainObjectInterface*> Objects;
+	TArray<ITerrainObjectInterface*> Objects;
 	UPROPERTY()
 		FBox ChunkBounds;
 	TArray<UMaterial*> MaterialList;
@@ -34,7 +35,8 @@ protected:
 //	TArray<ATestSphere*> Objects;
 	int resolution = BaseResolution;
 	float VoxelSize = BaseVoxelSize;
-	bool built = false;
+	bool IsRebuilding = false;
+//	bool 
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -75,5 +77,15 @@ private:
 		GridData**** Grid;
 	};
 	
+	class MeshSectionUpdateThread : FRunnable {
+		// Inherited via FRunnable
+	private: 
+		FProcMeshSection* UpdatedSection;
+	public:
+		virtual uint32 Run() override;
+		int Material;
+	};
 };
+
+
 

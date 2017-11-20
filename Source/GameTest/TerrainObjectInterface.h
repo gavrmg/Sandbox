@@ -31,4 +31,10 @@ public:
 	virtual FVector CalculateGradientAtPoint(const FVector& Point) = 0;
 	virtual FBox GetBoundingBox() = 0;
 	virtual CSG_TYPE_ENUM GetCSGType() = 0;
+	FDateTime GetTimeStamp() { return TimeStamp; };
+	void SetTimeStamp(FDateTime TimeStamp) {
+		this->TimeStamp = TimeStamp;
+	}
+protected:
+	FDateTime TimeStamp;
 };
