@@ -19,7 +19,7 @@ ASphereObject::ASphereObject()
 void ASphereObject::BeginPlay()
 {
 	Super::BeginPlay();
-	Radius = 500;
+	Radius = 640;
 	BoundingBox = FBox(this->GetTransform().GetTranslation() - Radius, this->GetTransform().GetTranslation() + Radius);
 }
 

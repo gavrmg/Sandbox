@@ -8,8 +8,8 @@
 #include "TerrainObjectInterface.h"
 #include "WorldObjectsHandler.generated.h"
 
-const float ChunkSize = 12800;
-const float Size = ChunkSize*4;//Size of the level cube;
+const float ChunkSize = 1280;
+const float Size = ChunkSize*4;//HalfSize of the level cube;
 
 typedef struct Octree
 {

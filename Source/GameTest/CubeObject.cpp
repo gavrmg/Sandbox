@@ -11,7 +11,7 @@ ACubeObject::ACubeObject()
 	PrimaryActorTick.bCanEverTick = true;
 	SceneComponent = CreateDefaultSubobject<USceneComponent>(TEXT("SceneComponent"));
 	RootComponent = SceneComponent;	
-	Extents = FVector(500, 500, 200);
+	Extents = FVector(630, 630, 630);
 }
 
 // Called when the game starts or when spawned

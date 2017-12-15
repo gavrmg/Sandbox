@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Region.h"
+//#include ""
 #include "WorldObjectsHandler.h"
 #include "ChunkMesh.h"
 #include "SphereDestructionObject.h"
@@ -21,7 +22,7 @@ void ARegion::BeginPlay()
 	Super::BeginPlay();
 	RegionVolume = FBox(FVector(GetTransform().GetTranslation() - Size), FVector(GetTransform().GetTranslation() + Size));
 //	APlayerCharacter::DigEvent::AddRaw(this, &ARegion::DigEvent_Implementation);
-/*	for (AActor* obj : GetLevel()->Actors) {
+	/*for (AActor* obj : GetLevel()->Actors) {
 		if (obj != nullptr) {
 			if ((!obj->HasActorBegunPlay())&&(obj!=this))
 				obj->DispatchBeginPlay();
@@ -45,34 +46,13 @@ void ARegion::InitRegion() {
 	if (!(handler->HasActorBegunPlay()))
 		handler->DispatchBeginPlay();
 	handler->Init(GetTransform().GetTranslation());
-	/*for(int i = 0; i < 8; i++)
-		for(int j = 0; j < 8; j++)
-			for (int k = 0; k < 8; k++) {
-				FVector location = ((FVector(i, j, k) - 4)*ChunkSize) + (ChunkSize / 2);
-				Chunks.Add((AChunkMesh*)world->SpawnActor<AChunkMesh>(location, FRotator::ZeroRotator));
-			}*/
-	/*
-	FVector location(-6400, -6400, 6400);
-	Chunks.Add((AChunkMesh*)world->SpawnActor<AChunkMesh>(location, FRotator::ZeroRotator));
-	*/
-/*	int i, j, k;
-	i = -4; j = -3; k = -4;
-	FVector location = ((FVector(i, j, k)*ChunkSize) + (ChunkSize / 2));
-	location.X = roundf(location.X);
-	location.Y = roundf(location.Y);
-	location.Z = roundf(location.Z);
-	FActorSpawnParameters params;
-	params.bAllowDuringConstructionScript = false;
-	params.bNoFail = false;
-	params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AChunkMesh* mesh = (AChunkMesh*)world->SpawnActor<AChunkMesh>(location, FRotator::ZeroRotator, params);
-	Chunks.Add(mesh);
-*/
+
 	for(int i = -4; i < 4; i++)
-//	int i = 0;
 		for(int j = -4; j < 4; j++)
 			for (int k = -4; k < 4; k++) {
-				FVector location = ((FVector(i, j, k)*ChunkSize) + (ChunkSize / 2));
+				FVector location = ((FVector(i, j, k)*ChunkSize));
+				if (i == 0 && j == 0 && k == 0)
+					int debug = 0;
 				location.X = roundf(location.X);
 				location.Y = roundf(location.Y);
 				location.Z = roundf(location.Z);
@@ -83,11 +63,10 @@ void ARegion::InitRegion() {
 				AChunkMesh* mesh = (AChunkMesh*)world->SpawnActor<AChunkMesh>(location, FRotator::ZeroRotator,params);
 				Chunks.Add(mesh);
 			}
-	int k = 0;
 }
 
 void ARegion::DigEvent_Implementation(FVector Position) {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("MyEventRecieved!"));
+//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("MyEventRecieved!"));
 	UWorld* world = GetWorld();
 	FActorSpawnParameters params;
 	params.bAllowDuringConstructionScript = false;

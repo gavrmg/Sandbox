@@ -28,15 +28,13 @@ void AGenerator::Tick(float DeltaTime)
  void AGenerator::GenerateHeightMap(const FVector& Position)
 {
 	AHeightMapObject* map = GetWorld()->SpawnActor<AHeightMapObject>(Position,FRotator::ZeroRotator);
-	int ChunkResolution = BaseResolution;
-	float VoxelSize = BaseVoxelSize;
 	int HeightMapResolution = resolution;
 	map->SetTimeStamp(FDateTime::MinValue());
-	FVector NormalizedPos = (Position / (VoxelSize*ChunkResolution)) * HeightMapResolution;
+	FVector NormalizedPos = (Position / (BaseVoxelSize*BaseResolution)) * HeightMapResolution;
 	FVector2D NormalizedPosPlanar;
 	for(int i = 0; i <= HeightMapResolution; i++)
 		for (int j = 0; j <= HeightMapResolution; j++) {
-			NormalizedPosPlanar.X = (float)i + NormalizedPos.X;
+			/*NormalizedPosPlanar.X = (float)i + NormalizedPos.X;
 			NormalizedPosPlanar.Y = (float)j + NormalizedPos.Y;
 			
 			float value = NoiseGen.GetValue(NormalizedPosPlanar.X, NormalizedPosPlanar.Y)
@@ -46,7 +44,8 @@ void AGenerator::Tick(float DeltaTime)
 			if (value > 1)
 				map->GetHeightMap()[i][j] = 1. / value;
 			else
-				map->GetHeightMap()[i][j] = value;
+				map->GetHeightMap()[i][j] = value;*/
+			map->GetHeightMap()[i][j] = 0;
 		}
 }
 

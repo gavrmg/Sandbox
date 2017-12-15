@@ -9,11 +9,11 @@ void ATestLevelScriptActor::SetupLevel()
 {
 	UWorld* world = GetWorld();
 	Generator = world->SpawnActor<AGenerator>();
-	for(int i = -4; i < 4; i++)
+	/*for(int i = -4; i < 4; i++)
 		for(int j = -4; j < 4; j++)
-			Generator->GenerateHeightMap(FVector(i,j,0)*12800);
+			Generator->GenerateHeightMap(FVector(i,j,0)*BaseResolution*BaseVoxelSize);*/
 	ARegion * Region = world->SpawnActor<ARegion>(FVector::ZeroVector, FRotator::ZeroRotator);
-	APlayerCharacter* PlayerCharacter = world->SpawnActor<APlayerCharacter>(FVector(0, 0, 14500), FRotator::ZeroRotator);
+	APlayerCharacter* PlayerCharacter = world->SpawnActor<APlayerCharacter>(FVector(640, 640, 1450), FRotator::ZeroRotator);
 	PlayerCharacter->CharacterDigEvent.AddUObject(Region, &ARegion::DigEvent_Implementation);
 	world->GetFirstPlayerController()->Possess(PlayerCharacter);
 //	PlayerCharacter->

@@ -22,7 +22,7 @@ ASphereDestructionObject::ASphereDestructionObject()
 void ASphereDestructionObject::BeginPlay()
 {
 	Super::BeginPlay();
-	Radius = 200;
+	Radius = 50;
 	BoundingBox = FBox(this->GetTransform().GetTranslation() - Radius, this->GetTransform().GetTranslation() + Radius);
 }
 

@@ -2,20 +2,32 @@
 
 #pragma once
 
+#include <cmath>
+#include <utility>
+#include <cstdio>
+
+
 #include "CoreMinimal.h"
 #include "Engine.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
 #include "TerrainObjectInterface.h"
+#include "GenericOctree.h"
 //#include "Windows.h"
+#include "Allocator/Allocator.h"
 #include "ChunkMesh.generated.h"
 
-const int BaseResolution = 64;
-const float BaseVoxelSize = 200;
+const int BaseResolution = 128;
+const float BaseVoxelSize = 10;
+
+typedef std::pair<float, ITerrainObjectInterface*> VoxelVertexData;
+
 struct GridData {
 	float Value;
 	ITerrainObjectInterface* Object;
 	UMaterialInterface* Material;
+	const size_t size = 0;
+	
 };
 
 struct Vertex {//Local representation of the mesh vertex
@@ -23,131 +35,39 @@ struct Vertex {//Local representation of the mesh vertex
 	FVector Normal;
 	FLinearColor Color;
 	FVector2D UV;
+	const size_t size = sizeof(FVector) * 3 + sizeof(FLinearColor) + sizeof(FVector2D);
 };
 struct EdgeData {
 	FVector Position;
 	FVector Normal;
 	Vertex NearestVertecies[4];
 	UMaterialInterface* Material;
-};
-struct MeshData {
-	MeshData(TArray<FVector>* vertecies, TArray<int32>* indecies, TArray<FVector>* normals, TArray<FVector2D>* uvs, TArray<FLinearColor>* colors, TArray<FProcMeshTangent>* tangents) {
-		Vertecies = vertecies;
-		Indecies = indecies;
-		Normals = normals;
-		UVs = uvs;
-		Colors = colors;
-		Tangents = tangents;
-	}
-	TArray<FVector>* Vertecies;
-	TArray<int32>* Indecies;
-	TArray<FVector>* Normals;
-	TArray<FVector2D>* UVs;
-	TArray<FLinearColor>* Colors;
-	TArray<FProcMeshTangent>* Tangents;
-
-};
-struct ChunkData {
-	int ChunkResolution;
-	GridData**** grid;
-	EdgeData***** edges;
-	Vertex**** voxels;
-	ChunkData() {
-		ChunkResolution = 64;
-	}
-
+	//TOctree<
 };
 
-class FMeshCalculationMultithread {
-
+enum OctreeNodeType {
+	Node_None,//Not a node
+	Node_Internal,//An internal nod of the tree
+	Node_Inside,//Node fully inside or outside the objects
+	Node_Pseudo,
+	Node_Leaf//Leaf node
+};
+class OctreeDrawInfo {
+	DECLARE_ALLOCATOR
 public:
-	FMeshCalculationMultithread();
-	~FMeshCalculationMultithread();
-	void BuildMesh(bool IsInitiating);
-	class AChunkMesh* Chunk;
-	ChunkData* ThisChunkData;
-	TArray<MeshData*> OutputArray;
-	FGraphEventArray GridBuilding_CompleteEvent;
-	FGraphEventArray MeshSectionCalculation_CompleteEvents;
-	bool GetIsGridComplete();
-	bool AreCalculationsComplete();
-	//TODO: Add GridBuildingTask
-	void BuildGrid();
-	//Actual task code, mesh building algo goes here;
-	MeshData* CalculateMeshSection(int32 SectionNumber);
-	FORCEINLINE void EmptyOutput() {
-		for (int i = 0; i < OutputArray.Num(); i++) {
-			delete OutputArray[i]->Vertecies;
-			delete OutputArray[i]->Indecies;
-			delete OutputArray[i]->Normals;
-			delete OutputArray[i]->UVs;
-			delete OutputArray[i]->Colors;
-			delete OutputArray[i]->Tangents;
-			delete OutputArray[i];
-		}
+	float QEFpos[36]{ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1 };
+	float QEFnormals[36]{ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1 };
+	FVector AverageNormal;
+	FVector Position;
+	int Materials[8];//corresponds to the material index in the chunk's MaterialList, -1 represents air;
+	int32 index = -1;
+	int corners;
+	OctreeDrawInfo() {
+		corners = 0;
 	}
-	void ResetGridData();
-	class FGridBuildingTask {
-	public:
-
-		FGridBuildingTask(FMeshCalculationMultithread* ThreadDataContainer);
-
-		~FGridBuildingTask() {};
-
-		FMeshCalculationMultithread* base;
-		static const TCHAR* GetTaskName() {
-			return TEXT("GridBuildingTask");
-		}
-
-		FORCEINLINE TStatId GetStatId() const { RETURN_QUICK_DECLARE_CYCLE_STAT(FGridBuildingTask, STATGROUP_TaskGraphTasks); }
-
-		static ENamedThreads::Type GetDesiredThread() {
-			return ENamedThreads::AnyThread;
-		}
-		static ESubsequentsMode::Type GetSubsequentsMode()
-		{
-			return ESubsequentsMode::TrackSubsequents;
-		}
-
-
-		void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& CompletionGraph);
-	};
-	class FMeshDataBuildingTask {
-	public:
-		FMeshDataBuildingTask(int32 SectionNumber, FMeshCalculationMultithread* ThreadDataContainer);
-
-		~FMeshDataBuildingTask() {};
-		FMeshCalculationMultithread* base;
-		int32 sectionNumber;
-		static const TCHAR* GetTaskName() {
-			return TEXT("MeshDataBuildingTask");
-		}
-
-		FORCEINLINE TStatId GetStatId() const { RETURN_QUICK_DECLARE_CYCLE_STAT(FMeshDataBuildingTask, STATGROUP_TaskGraphTasks); }
-
-		static ENamedThreads::Type GetDesiredThread() {
-			return ENamedThreads::AnyThread;
-		}
-
-		static ESubsequentsMode::Type GetSubsequentsMode()
-		{
-			return ESubsequentsMode::TrackSubsequents;
-		}
-
-
-		void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& CompletionGraph);
-	};
-
-
-	inline float lerpEdge(float a, float b) {
-		if (abs(a - b) > 0.00001f)
-			return (0 - a) / (b - a);
-		else
-			return 0;
-	}
-
 };
 
+class vOctree;
 
 UCLASS()
 class GAMETEST_API AChunkMesh : public AActor
@@ -164,6 +84,7 @@ public:
 	UPROPERTY()
 		FBox ChunkBounds;
 	TArray<UMaterial*> MaterialList;
+	class vOctree* VoxelOctree;
 	
 	//class TArray<ITerrainObjectInterface*> Objects;
 protected:
@@ -171,10 +92,9 @@ protected:
 	virtual void BeginPlay() override;
 //	TArray<ATestSphere*> Objects;
 	int resolution = BaseResolution;
-	float VoxelSize = BaseVoxelSize;
+	float UnitPerVoxel = BaseVoxelSize;
 	bool IsRebuilding = false;
 	bool MeshDataBuilding = false;
-	class FMeshCalculationMultithread* Thread = new FMeshCalculationMultithread();
 	//TArray<FMeshCalculationThread> ChildThreads;
 //	bool 
 public:	
@@ -183,21 +103,76 @@ public:
 	//void DataReady_Implementation(AChunkMesh* Chunk, FMeshCalculationThread* Thread);
 	void ConstructMesh();
 	void UpdateObjects();
-/*	void StartRebuilding() {
-		NeedsRebuilding = true;
-	}*/
-	void SetRebuilding(bool State) {
-		IsRebuilding = State;
-	}
-	bool GetIsRebuilding() {
-		return IsRebuilding;
-	}
+
+
 	const FBox& GetChunkBounds() {
 		return ChunkBounds;
 	}
+	static inline float lerpEdge(float a, float b) {
+		if (abs(a - b) > 0.00001f)
+			return (0 - a) / (b - a);
+		else {
+			if (a - b > 0)
+				return 0;
+			else
+				return 1;
+		}
+	}
+
+	VoxelVertexData CalcCSGAtPoint(const FVector& Point);
+
 
 	
 };
 
 
+
+
+class ChunkOctreeNode {
+	DECLARE_ALLOCATOR
+public:
+	const float minsize = 20;
+	ChunkOctreeNode(FBox boundingBox, AChunkMesh* chunk) {
+		this->BoundingBox = boundingBox;
+		//this->type = type;
+		this->Chunk = chunk;
+		this->DrawInfo = nullptr;
+	};
+
+
+
+	~ChunkOctreeNode() {
+		if (type != Node_Leaf) {
+			for (int i = 0; i < 8; i++) {
+				if (Children[i] != nullptr) {
+					delete Children[i];
+					Children[i] = nullptr;
+				}
+			}
+			//delete[] Children;
+			Chunk = nullptr;
+		}
+		else {
+			if (DrawInfo != nullptr)
+				delete DrawInfo;
+		}
+	}
+	AChunkMesh* Chunk;
+	ChunkOctreeNode* Parent;
+	void ConstructOctreeNodes();
+	OctreeNodeType type;
+	FBox BoundingBox;
+	float size;
+	ChunkOctreeNode* Children[8];
+	OctreeDrawInfo* DrawInfo = nullptr;
+
+};
+
+class vOctree {
+public:
+	vOctree() {};
+	~vOctree() {};
+	ChunkOctreeNode* root;
+	
+};
 

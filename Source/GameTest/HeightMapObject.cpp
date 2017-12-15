@@ -28,7 +28,7 @@ void AHeightMapObject::BeginPlay()
 	Min.Z = 0;
 	Max.X = pos.X + ChunkSize;
 	Max.Y = pos.Y + ChunkSize;
-	Max.Z = 12800;
+	Max.Z = 1280;
 	/*for (int i = 0; i < resolution+1; i++)
 		for (int j = 0; j < resolution+1; j++)
 			HeightMap[(int)(i*(resolution + 1)) + j] = 0;*/
@@ -44,8 +44,9 @@ void AHeightMapObject::Tick(float DeltaTime)
 int Pos1D;
 float AHeightMapObject::CalculateSignedDistanceFunction(const FVector& Point) {
 	//LocalPoint = Point - GetTransform().GetTranslation();
-	LocalPoint.X = Point.X - GetTransform().GetTranslation().X;
-	LocalPoint.Y = Point.Y - GetTransform().GetTranslation().Y;
+	FVector Position = GetTransform().GetTranslation();
+	LocalPoint.X = Point.X - BoundingBox.GetCenter().X;
+	LocalPoint.Y = Point.Y - BoundingBox.GetCenter().Y;
 	LocalPoint.Z = Point.Z;
 	//LocalPoint /= ChunkSize;
 	LocalPoint.X =  (LocalPoint.X/ChunkSize)*(resolution+1);

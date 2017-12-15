@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "WorldObjectsHandler.h"
+#include "Windows.h"
 
 std::forward_list<ITerrainObjectInterface*> InsertionObjectsList;
 
@@ -28,6 +29,8 @@ void AWorldObjectsHandler::Tick(float DeltaTime)
 
 void AWorldObjectsHandler::Init(const FVector & Position)
 {
+//	SYSTEMTIME start, stop;
+//	GetSystemTime(&start);
 	Volume = FBox(Position - Size, Position + Size);
 	TArray<ITerrainObjectInterface*>* objs = new TArray<ITerrainObjectInterface*>();
 	for (AActor* obj : GetLevel()->Actors) {
@@ -48,6 +51,9 @@ void AWorldObjectsHandler::Init(const FVector & Position)
 	delete objs;
 	ObjectsContainer.Build(FBox(Position - FVector(Size, Size, Size), Position + FVector(Size,Size,Size)));
 	InsertionObjectsList.clear();
+//	GetSystemTime(&stop);
+//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::FromInt(stop.wMilliseconds-start.wMilliseconds));
+
 
 }
 

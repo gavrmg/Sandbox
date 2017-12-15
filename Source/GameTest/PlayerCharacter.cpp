@@ -77,12 +77,12 @@ void APlayerCharacter::Dig()
 	QueryParams.bReturnPhysicalMaterial = true;
 	QueryParams.AddIgnoredActor(this);
 	QueryObjectParams.RemoveObjectTypesToQuery(ECC_Pawn);
+	GetSystemTime(&stop);
 
+//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::FromInt(stop.wMilliseconds-start.wMilliseconds));
 	if (GetWorld()->LineTraceSingleByObjectType(HitResult, Start, End, QueryObjectParams, QueryParams)) {
 		CharacterDigEvent.Broadcast(HitResult.Location);
 	}
-	GetSystemTime(&stop);
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::FromInt(stop.wMilliseconds-start.wMilliseconds));
 }
 
 // Called every frame

@@ -5,15 +5,62 @@
 #include "WorldObjectsHandler.h"
 #include "SphereDestructionObject.h"
 #include "ConstructorHelpers.h"
+//#include "UnrealMemory.h"
+//#include "Timer.h"
 
 // Sets default values
 
-const FVector VoxelVertecies[] = { FVector(0, 0, 0),  FVector(1, 0, 0),
-FVector(1, 0, 1),  FVector(0, 0, 1),  FVector(0, 1, 0),  FVector(1, 1, 0),
-FVector(1, 1, 1),  FVector(0, 1, 1) };
+//const FVector VoxelVertecies[] = { FVector(0, 0, 0),  FVector(1, 0, 0),
+//FVector(1, 0, 1),  FVector(0, 0, 1),  FVector(0, 1, 0),  FVector(1, 1, 0),
+//FVector(1, 1, 1),  FVector(0, 1, 1) };
+
+const FVector VoxelVertecies[] = { FVector(0, 0, 0),  FVector(0, 0, 1),
+FVector(0, 1, 0),  FVector(0, 1, 1),  FVector(1, 0, 0),  FVector(1, 0, 1),
+FVector(1, 1, 0),  FVector(1, 1, 1) };
+
+
+const int edgevmap[12][2] =
+{
+	{ 0,4 },{ 1,5 },{ 2,6 },{ 3,7 },	// x-axis 
+	{ 0,2 },{ 1,3 },{ 4,6 },{ 5,7 },	// y-axis
+	{ 0,1 },{ 2,3 },{ 4,5 },{ 6,7 }		// z-axis
+};
+
+const int faceMap[6][4] = { { 4, 8, 5, 9 },{ 6, 10, 7, 11 },{ 0, 8, 1, 10 },{ 2, 9, 3, 11 },{ 0, 4, 2, 6 },{ 1, 5, 3, 7 } };
+const int cellProcFaceMask[12][3] = { { 0,4,0 },{ 1,5,0 },{ 2,6,0 },{ 3,7,0 },{ 0,2,1 },{ 4,6,1 },{ 1,3,1 },{ 5,7,1 },{ 0,1,2 },{ 2,3,2 },{ 4,5,2 },{ 6,7,2 } };
+const int cellProcEdgeMask[6][5] = { { 0,1,2,3,0 },{ 4,5,6,7,0 },{ 0,4,1,5,1 },{ 2,6,3,7,1 },{ 0,2,4,6,2 },{ 1,3,5,7,2 } };
+
+const int faceProcFaceMask[3][4][3] = {
+	{ { 4,0,0 },{ 5,1,0 },{ 6,2,0 },{ 7,3,0 } },
+	{ { 2,0,1 },{ 6,4,1 },{ 3,1,1 },{ 7,5,1 } },
+	{ { 1,0,2 },{ 3,2,2 },{ 5,4,2 },{ 7,6,2 } }
+};
+
+const int faceProcEdgeMask[3][4][6] = {
+	{ { 1,4,0,5,1,1 },{ 1,6,2,7,3,1 },{ 0,4,6,0,2,2 },{ 0,5,7,1,3,2 } },
+	{ { 0,2,3,0,1,0 },{ 0,6,7,4,5,0 },{ 1,2,0,6,4,2 },{ 1,3,1,7,5,2 } },
+	{ { 1,1,0,3,2,0 },{ 1,5,4,7,6,0 },{ 0,1,5,0,4,1 },{ 0,3,7,2,6,1 } }
+};
+
+const int edgeProcEdgeMask[3][2][5] = {
+	{ { 3,2,1,0,0 },{ 7,6,5,4,0 } },
+	{ { 5,1,4,0,1 },{ 7,3,6,2,1 } },
+	{ { 6,4,2,0,2 },{ 7,5,3,1,2 } },
+};
+
+const int processEdgeMask[3][4] = { { 3,2,1,0 },{ 7,5,6,4 },{ 11,10,9,8 } };
+
 
 const FVector VoxelEdges[3][4] = { {FVector(0,0,0),FVector(0,0,1),FVector(0,1,1),FVector(0,1,0)},{FVector(0,0,0),FVector(0,0,1),FVector(1,0,1),FVector(1,0,0)},{FVector(0,0,0),FVector(0,1,0),FVector(1,1,0),FVector(1,0,0)} };
 const FVector NearestVoxels[3][4] = { { FVector(0,0,0),FVector(0,-1,0),FVector(0,-1,-1),FVector(0,0,-1) },{ FVector(0,0,0),FVector(0,0,-1),FVector(-1,0,-1),FVector(-1,0,0) },{ FVector(0,0,0),FVector(-1,0,0),FVector(-1,-1,0),FVector(0,-1,0) } };
+
+typedef std::pair<float, ITerrainObjectInterface*> VoxelVertexData;
+
+IMPLEMENT_ALLOCATOR(ChunkOctreeNode, 2396745, 0)
+
+IMPLEMENT_ALLOCATOR(OctreeDrawInfo, 2396745, 0)
+
+
 AChunkMesh::AChunkMesh()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
@@ -22,19 +69,281 @@ AChunkMesh::AChunkMesh()
 	MaterialList.Add((ConstructorHelpers::FObjectFinder<UMaterial>(TEXT("UMaterial'/Game/Resources/Materials/TestStone'"))).Object);
 	MaterialList.Add((ConstructorHelpers::FObjectFinder<UMaterial>(TEXT("UMaterial'/Game/Resources/Materials/TestDirt'"))).Object);
 	RootComponent = Mesh;
-	Thread->Chunk = this;
-	Thread->ThisChunkData = new ChunkData();
 
 }
 
-void AChunkMesh::ConstructMesh()
-{
-	Thread->BuildMesh(true);
+
+int TriangleIndex = 0;
+
+void ContourProcessEdge(ChunkOctreeNode* node[4], int dir, TArray<int32>* Indecies, AChunkMesh* chunk, int MaterialIndex) {
+	float minSize = MAX_FLT;
+	int minIndex = 0;
+	int32 indecies[4] = { -1,-1,-1,-1 };
+	bool flip = false;
+	bool signChange[4] = { false,false,false,false };
+	bool HasMaterial[4] = { false,false,false,false };
+	bool AllVertsHasMaterial = true;
+	for (int i = 0; i < 4; i++) {
+		const int edge = processEdgeMask[dir][i];
+		const int c1 = edgevmap[edge][0];
+		const int c2 = edgevmap[edge][1];
+		const int m1 = (node[i]->DrawInfo->corners >> c1) & 1;//What happened here? Questions, questions...
+		const int m2 = (node[i]->DrawInfo->corners >> c2) & 1;//That's the lesson, chuldren. Never use the forbidden spells... heck, never copy the code you do not understand
+		for (int j = 0; j < 8; j++) {
+			HasMaterial[i] = HasMaterial[i] || (node[i]->DrawInfo->Materials[j] == MaterialIndex);
+		}
+		if (!HasMaterial[i]) {
+			AllVertsHasMaterial = false;
+			break;
+		}
+		if (node[i]->size < minSize) {
+			minSize = node[i]->size;
+			minIndex = i;
+			flip = m1 != 0;
+		}
+		indecies[i] = ((node[i]->DrawInfo->index));
+		signChange[i] =
+			(m1 == 0 && m2 != 0) ||
+			(m1 != 0 && m2 == 0);
+	}
+	if(AllVertsHasMaterial)
+		if (signChange[minIndex])
+		{
+			if (flip)
+			{
+				Indecies->Add(indecies[0]);
+				Indecies->Add(indecies[1]);
+				Indecies->Add(indecies[3]);
+
+				Indecies->Add(indecies[0]);
+				Indecies->Add(indecies[3]);
+				Indecies->Add(indecies[2]);
+			}
+			else
+			{
+				Indecies->Add(indecies[0]);
+				Indecies->Add(indecies[3]);
+				Indecies->Add(indecies[1]);
+
+				Indecies->Add(indecies[0]);
+				Indecies->Add(indecies[2]);
+				Indecies->Add(indecies[3]);
+			}
+
+		}
+
+}
+
+void ContourEdgeProc(ChunkOctreeNode* node[4], int dir, TArray<int32>* Indecies, AChunkMesh* chunk, int MaterialIndex) {
+	if (!node[0] || !node[1] || !node[2] || !node[3])
+	{
+		return;
+	}
+	if (node[0]->type != Node_Internal &&
+		node[1]->type != Node_Internal &&
+		node[2]->type != Node_Internal &&
+		node[3]->type != Node_Internal)
+	{
+		ContourProcessEdge(node, dir, Indecies, chunk,MaterialIndex);
+	}
+	else
+	{
+		for (int i = 0; i < 2; i++)
+		{
+			ChunkOctreeNode* edgeNodes[4];
+			const int c[4] =
+			{
+				edgeProcEdgeMask[dir][i][0],
+				edgeProcEdgeMask[dir][i][1],
+				edgeProcEdgeMask[dir][i][2],
+				edgeProcEdgeMask[dir][i][3],
+			};
+
+			for (int j = 0; j < 4; j++)
+			{
+				if (node[j]->type == Node_Leaf || node[j]->type == Node_Pseudo)
+				{
+					edgeNodes[j] = node[j];
+				}
+				else
+				{
+					edgeNodes[j] = node[j]->Children[c[j]];
+				}
+			}
+		ContourEdgeProc(edgeNodes, edgeProcEdgeMask[dir][i][4], Indecies,chunk,MaterialIndex);
+		}
+	}
+}
+
+void ContourFaceProc(ChunkOctreeNode* node[2], int dir, TArray<int32>* Indecies, AChunkMesh* chunk, int MaterialIndex) {
+	if (!node[0] || !node[1])
+	{
+		return;
+	}
+
+	if (node[0]->type == Node_Internal ||
+		node[1]->type == Node_Internal)
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			ChunkOctreeNode* faceNodes[2];
+			const int c[2] =
+			{
+				faceProcFaceMask[dir][i][0],
+				faceProcFaceMask[dir][i][1],
+			};
+
+			for (int j = 0; j < 2; j++)
+			{
+				if (node[j]->type != Node_Internal)
+				{
+					faceNodes[j] = node[j];
+				}
+				else
+				{
+					faceNodes[j] = node[j]->Children[c[j]];
+				}
+			}
+
+			ContourFaceProc(faceNodes, faceProcFaceMask[dir][i][2], Indecies,chunk,MaterialIndex);
+		}
+
+		const int orders[2][4] =
+		{
+			{ 0, 0, 1, 1 },
+			{ 0, 1, 0, 1 },
+		};
+		for (int i = 0; i < 4; i++)
+		{
+			ChunkOctreeNode* edgeNodes[4];
+			const int c[4] =
+			{
+				faceProcEdgeMask[dir][i][1],
+				faceProcEdgeMask[dir][i][2],
+				faceProcEdgeMask[dir][i][3],
+				faceProcEdgeMask[dir][i][4],
+			};
+
+			const int* order = orders[faceProcEdgeMask[dir][i][0]];
+			for (int j = 0; j < 4; j++)
+			{
+				if (node[order[j]]->type == Node_Leaf ||
+					node[order[j]]->type == Node_Pseudo)
+				{
+					edgeNodes[j] = node[order[j]];
+				}
+				else
+				{
+					edgeNodes[j] = node[order[j]]->Children[c[j]];
+				}
+			}
+
+			ContourEdgeProc(edgeNodes, faceProcEdgeMask[dir][i][5], Indecies,chunk,MaterialIndex);
+		}
+	}
+}
+
+void ContourCellProc(ChunkOctreeNode* node, TArray<int32>* Indecies,AChunkMesh* chunk,int MaterialIndex) {
+	if (node == nullptr) {
+		return;
+	}
+	if(node->type == Node_Internal){
+		for (int i = 0; i < 8; i++) {
+			ContourCellProc(node->Children[i], Indecies,chunk, MaterialIndex);
+		}
+		for (int i = 0; i < 12; i++)
+		{
+			ChunkOctreeNode* faceNodes[2];
+			const int c[2] = { cellProcFaceMask[i][0], cellProcFaceMask[i][1] };
+
+			faceNodes[0] = node->Children[c[0]];
+			faceNodes[1] = node->Children[c[1]];
+			ContourFaceProc(faceNodes, cellProcFaceMask[i][2], Indecies,chunk,MaterialIndex);
+		}
+
+		for (int i = 0; i < 6; i++)
+		{
+			ChunkOctreeNode* edgeNodes[4];
+			const int c[4] =
+			{
+				cellProcEdgeMask[i][0],
+				cellProcEdgeMask[i][1],
+				cellProcEdgeMask[i][2],
+				cellProcEdgeMask[i][3],
+			};
+
+			for (int j = 0; j < 4; j++)
+			{
+				edgeNodes[j] = node->Children[c[j]];
+			}
+
+			ContourEdgeProc(edgeNodes, cellProcEdgeMask[i][4], Indecies, chunk,MaterialIndex);
+		}
+	}
+}
+
+void TraverseOctree(ChunkOctreeNode* root, TArray<FVector>* Vertecies, TArray<FVector>* Normals , AChunkMesh* chunk, int MaterialIndex) {
+	if (root == nullptr)
+		return;
+	if (root->type == Node_Leaf || root->type == Node_Pseudo) {
+		if (root->DrawInfo != nullptr) {
+			bool containsMaterial = false;
+			for (int i = 0; i < 8; i++) {
+				if (root->DrawInfo->Materials[i] == MaterialIndex) {
+					containsMaterial = true;
+					break;
+				}
+			}
+			if (containsMaterial) {
+				root->DrawInfo->index = TriangleIndex++;
+				Vertecies->Add(root->DrawInfo->Position);
+				Normals->Add(root->DrawInfo->AverageNormal);
+			}
+		}
+	}
+	else
+		for (int i = 0; i < 8; i++) {
+			if(root->type == Node_Internal)
+				TraverseOctree(root->Children[i], Vertecies, Normals, chunk, MaterialIndex);
+		
+		}
+	//if (root->type == Node_Leaf || root->type == Node_Pseudo) 
+	/*if(root->DrawInfo!=nullptr){
+	}*/
+	//index = 0;
+	return;
+}
+
+void AChunkMesh::ConstructMesh() {
+	if (Objects.Num() == 0)
+		return;
+	VoxelOctree->root = new ChunkOctreeNode(ChunkBounds,this);
+	VoxelOctree->root->type = Node_Internal;
+	SYSTEMTIME start, stop;
+	GetSystemTime(&start);
+	VoxelOctree->root->ConstructOctreeNodes();
+	for (int i = 0; i < MaterialList.Num(); i++) {
+		TArray<FVector> Vertecies;
+		TArray<int32> Indecies;
+		TArray<FVector> Normals;
+		TArray<FVector2D> UVs;
+		TArray<FLinearColor> Colors;
+		TArray<FProcMeshTangent> Tangents;
+		TriangleIndex = 0;
+		TraverseOctree(VoxelOctree->root, &Vertecies, &Normals, this, i);
+		ContourCellProc(VoxelOctree->root, &Indecies, this, i);
+		Mesh->CreateMeshSection_LinearColor(i, Vertecies, Indecies, Normals, UVs, Colors, Tangents, true);
+		Mesh->SetMaterial(i, MaterialList[i]);
+	}
+	GetSystemTime(&stop);
+	GEngine->AddOnScreenDebugMessage(0, 10, FColor::Red, FString::FromInt((stop.wSecond-start.wSecond)*1000 + stop.wMilliseconds - start.wMilliseconds));
+	delete VoxelOctree->root;
+
 }
 
 void AChunkMesh::UpdateObjects() {
 	FTransform transform = this->GetTransform();
-	ChunkBounds = FBox(transform.GetTranslation() - (ChunkSize/2), transform.GetTranslation() + (ChunkSize/2));//Don't forget. All operations in sequence;
+	ChunkBounds = FBox(transform.GetTranslation(), transform.GetTranslation() + ChunkSize);//Don't forget. All operations in sequence;
 	ULevel * level;
 	level = this->GetLevel();
 	AWorldObjectsHandler* handler;
@@ -44,12 +353,55 @@ void AChunkMesh::UpdateObjects() {
 		handler->DispatchBeginPlay();
 	this->Objects = handler->ObjectsContainer.Search(ChunkBounds);
 }
+VoxelVertexData AChunkMesh::CalcCSGAtPoint(const FVector & Point)
+{
+	float current, previous;
+	current = MAX_FLT;
+	previous = MAX_FLT;
+	CSG_TYPE_ENUM CurrentCSGOp;
+	ITerrainObjectInterface* currentObject;
+	FDateTime previousTimeStamp = FDateTime::MinValue();
+	for (ITerrainObjectInterface* obj : Objects) {
+		current = (obj->CalculateSignedDistanceFunction(Point/*-GetTransform().GetTranslation()*/));
+		CurrentCSGOp = obj->GetCSGType();
+		/*if (!(obj->GetBoundingBox().IsInsideOrOn(Point)))
+			continue;*/
+		switch (CurrentCSGOp) {
+		case CSG_TYPE_ENUM::CSG_OR: {
+			if (current < previous) {
+				if (obj->GetTimeStamp() >= previousTimeStamp) {
+					previousTimeStamp = obj->GetTimeStamp();
+					previous = current;
+					currentObject = obj;
+				}
+			}
+			break;
+		}
+		case CSG_TYPE_ENUM::CSG_DIFF: {
+			if ((-current) > previous) {
+				if (obj->GetTimeStamp() >= previousTimeStamp) {
+					previousTimeStamp = obj->GetTimeStamp();
+					currentObject = obj;
+					previous = -current;
+				}
+			}
+			break;
+		}
+		}
+	}
+	if (previous <= 0)
+		return VoxelVertexData(previous, currentObject);
+	else
+		return VoxelVertexData(previous, nullptr);
+}
 // Called when the game starts or when spawned
 void AChunkMesh::BeginPlay()
 {
 	Super::BeginPlay();
+	VoxelOctree = new vOctree();
 /*	float resolution = 64;
 	int VoxelSize = 200;*/
+	//Thread = new FMeshCalculationMultithread();
 	UpdateObjects();
 	ConstructMesh();
 	
@@ -59,44 +411,16 @@ void AChunkMesh::BeginPlay()
 void AChunkMesh::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	if (IsRebuilding) {
-		if ((Thread->GetIsGridComplete())&&MeshDataBuilding == false) {
-			MeshDataBuilding = true;
-			for(int i = 0; i < MaterialList.Num(); i++)
-				Thread->MeshSectionCalculation_CompleteEvents.Add(TGraphTask<FMeshCalculationMultithread::FMeshDataBuildingTask>::CreateTask(NULL, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(i,Thread));
-		}
-		if (MeshDataBuilding)
-			if (Thread->AreCalculationsComplete()) {
-				for (int i = 0; i < MaterialList.Num(); i++) {
-					Mesh->CreateMeshSection_LinearColor(i, *Thread->OutputArray[i]->Vertecies, *Thread->OutputArray[i]->Indecies, *Thread->OutputArray[i]->Normals, *Thread->OutputArray[i]->UVs, *Thread->OutputArray[i]->Colors, *Thread->OutputArray[i]->Tangents, true);
-					Mesh->SetMaterial(i, MaterialList[i]);
-				}
-				MeshDataBuilding = false;
-				IsRebuilding = false;
-				Thread->ResetGridData();
-				Thread->GridBuilding_CompleteEvent.Empty();
-				Thread->MeshSectionCalculation_CompleteEvents.Empty();
-				Thread->EmptyOutput();
-			}
-
-	}
 }
 
-/*void AChunkMesh::DataReady_Implementation(AChunkMesh* Chunk, FMeshCalculationThread* Thread)
-{
-
-}*/
-
-TArray<float> b;
-float temp;
-long elapsed, current, previous;
 
 
 
-float UnitPerVoxel = 200;
+
+
+//float UnitPerVoxel = 200;
 //float HalfChunkSize = 3125.0;
-float HalfChunkSize = 6400;
+//float HalfChunkSize = 6400;
 
 /*
 	Code comments
@@ -134,669 +458,117 @@ float HalfChunkSize = 6400;
 */
 
 
+void ChunkOctreeNode::ConstructOctreeNodes(){
 
-
-/*uint32 FMeshCalculationThread::Run()
-{
-	elapsed = 0;
-	TArray<FVector> normals;
-	TArray<FVector> positions;
-	GridData**** grid;
-	EdgeData***** edges;
-	Vertex**** voxels;
-	FVector temp,NextPoint;
-	FVector CurrentPos;
-	FVector IntersectionPosition;
-	FVector CurrentEdgePos;
-	FVector CurrentVoxel;
-	Vertex* CurrentVertex;
-	float relativePos; //Relative position of the edge's intersection point
-	float current, previous,next;//Temp floats used for calculateing SDF value at grid points
-	EdgeData* currentEdge;
-	ITerrainObjectInterface* currentObject = nullptr;
-	bool SignChangeFlag = false;
-	bool ClockwiseFlag = false;
-	//Init grid;
-	//Basic size = 64
-	//Basic size is the number of vertecies in one dimension of the chunk
-	//The number of grid points and edges is size+1
-	//Actually the number of edges is size or size+1, but for sake of easy implementaiton is always size+1
-	//Used number is size+2 so that space between chunks would also be covered
-	grid = new GridData***[BaseResolution+2];
-	for (int i = 0; i < BaseResolution+2; i++) {
-		grid[i] = new GridData**[BaseResolution+2];
-		for (int j = 0; j < BaseResolution+2; j++) {
-			grid[i][j] = new GridData*[BaseResolution+2];
-			for (int k = 0; k < BaseResolution+2; k++)
-				grid[i][j][k] = new GridData();
+	FVector Min = this->BoundingBox.GetCenter() - this->BoundingBox.GetExtent();
+//	ITerrainObjectInterface* VerteciesMaterials[8];
+	//Check whether this node is intersected by the isosurface
+	this->size = this->BoundingBox.GetExtent().X * 2;
+	if (size > minsize) {
+		this->type = Node_Internal;
+		FVector MinBound, MaxBound;
+		for (int nodeCount = 0; nodeCount < 8; nodeCount++) {
+			MinBound = Min + (VoxelVertecies[nodeCount] * BoundingBox.GetExtent());
+			MaxBound = MinBound + BoundingBox.GetExtent();
+			FBox box = FBox(MinBound, MaxBound);
+			Children[nodeCount] = new ChunkOctreeNode(box, this->Chunk);;
+			Children[nodeCount]->Parent = this;
+			Children[nodeCount]->ConstructOctreeNodes();
 		}
-	}
-	//Init grid edges;
-	edges = new EdgeData****[3];
-	for (int Direction = 0; Direction < 3; Direction++) {
-		edges[Direction] = new EdgeData***[BaseResolution+2];
-		for (CurrentPos.X = 0; CurrentPos.X < BaseResolution+2; CurrentPos.X++) {
-			edges[Direction][(int)CurrentPos.X] = new EdgeData**[BaseResolution+2];
-			for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution+2; CurrentPos.Y++) {
-				edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y] = new EdgeData*[BaseResolution+2];
-				for(CurrentPos.Z = 0; CurrentPos.Z< BaseResolution+2;CurrentPos.Z++){
-					edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] = nullptr;
+		for (int i = 0; i < 8; i++) {
+			if (nullptr != Children[i]) {
+				if (Children[i]->type == Node_Leaf) {
+					if (Children[i]->DrawInfo == nullptr) {
+						delete Children[i];
+						Children[i] = nullptr;
+					}
+				}
+				else {
+					bool NodeIntersectedFlag = false;
+					for (int j = 0; j < 8; j++) {
+						//UE_LOG(LogTemp, Verbose, FString::Printf("%s%i", "Node_Internal ", j));
+						NodeIntersectedFlag |= (Children[i]->Children[j] != nullptr);
+					}
+					if (!NodeIntersectedFlag) {
+						if (Children != nullptr)
+							if (Children[i] != nullptr) {
+								delete Children[i];
+								Children[i] = nullptr;
+							}
+					}
 				}
 			}
-		}
-	}
-	voxels = new Vertex***[BaseResolution+1];
-	for (int i = 0; i < BaseResolution+1; i++) {
-		voxels[i] = new Vertex**[BaseResolution+1];
-		for (int j = 0; j < BaseResolution+1; j++) {
-			voxels[i][j] = new Vertex*[BaseResolution+1];
-			for (int k = 0; k < BaseResolution+1; k++)
-				voxels[i][j][k] = nullptr;
-		}
-	}
-	//Calculate values at grid points
-	CSG_TYPE_ENUM CurrentCSGOp;//Which CSG operation should be executed
-	FDateTime  previousTimeStamp;
-	for (CurrentPos.X = 0; CurrentPos.X < BaseResolution+2; CurrentPos.X++)
-		for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution+2; CurrentPos.Y++)
-			for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution+2; CurrentPos.Z++) {
-				current = MAX_FLT;
-				previous = MAX_FLT;
-				currentObject = nullptr;
-				FVector pos = ((CurrentPos-32)*UnitPerVoxel) + Chunk->ChunkBounds.GetCenter();
-				previousTimeStamp = FDateTime::MinValue();
-				for (ITerrainObjectInterface* obj : Chunk->Objects) {
-					current = (obj->CalculateSignedDistanceFunction(pos));
-					CurrentCSGOp = obj->GetCSGType();
-						switch (CurrentCSGOp) {
-							case CSG_TYPE_ENUM::CSG_OR: {
-								if (current < previous) {
-									if (obj->GetTimeStamp() >= previousTimeStamp) {
-										previousTimeStamp = obj->GetTimeStamp();
-										previous = current;
-										currentObject = obj;
-									}
-								}
-								break;
-							}
-							case CSG_TYPE_ENUM::CSG_DIFF: {
-								if ((-current) > previous) {
-									if (obj->GetTimeStamp() >= previousTimeStamp) {
-										previousTimeStamp = obj->GetTimeStamp();
-										currentObject = obj;
-										previous = -current;
-									}
-								}
-								break;
-							}
-						}
-					}
+
 				
-				grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value = previous;
-				grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Object = currentObject;
-				grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Material = Material;
-
-			}
-
-	//For each edge, if there is a sign change, calculate position of the intersection point and normal at this point;
-	//new edge is created only if there is an intersection, else this edge is nullptr;
-	//Used number is size + 2 as we need to look through every edge
-	for (int Direction = 0; Direction < 3; Direction++) {
-		temp.Set(0, 0, 0);
-		temp.Component(Direction) = 1;
-		for (CurrentPos.X = 0; CurrentPos.X < BaseResolution+2; CurrentPos.X++)
-			for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution+2; CurrentPos.Y++)
-				for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution+2; CurrentPos.Z++) {
-					NextPoint = CurrentPos + temp;
-					if (NextPoint.GetMax() > BaseResolution+1)
-						continue;
-					current = grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value;
-					next = grid[(int)NextPoint.X][(int)NextPoint.Y][(int)NextPoint.Z]->Value;
-					if (current*next <= 0) {
-					edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] = new EdgeData();
-						currentEdge = edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-						relativePos = lerpEdge(current, next);
-					IntersectionPosition = (((CurrentPos + (temp*relativePos)) - 32)*UnitPerVoxel) + Chunk->ChunkBounds.GetCenter();
-						currentEdge->Position = IntersectionPosition;
-						if(current<=0)
-							currentObject = grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Object;
-						else
-							currentObject = grid[(int)NextPoint.X][(int)NextPoint.Y][(int)NextPoint.Z]->Object;
-
-						currentEdge->Normal = currentObject->CalculateGradientAtPoint(IntersectionPosition);
-						currentEdge->Material = grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Material;
-					}
-				}
-	}
-	float* Positions_container;
-	float* Normals_container;
-	float* Result = new float[3];
-	//Calculating vertex position in each voxel
-	//Number of voxels is size+1
-	for (CurrentPos.X = 0; CurrentPos.X < BaseResolution+1; CurrentPos.X++)
-		for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution+1; CurrentPos.Y++)
-			for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution+1; CurrentPos.Z++) {
-				previous = grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value;
-				SignChangeFlag = false;
-				for (int VertexCounter = 1; VertexCounter < 8; VertexCounter++) {
-					NextPoint = CurrentPos + VoxelVertecies[VertexCounter];
-					current = grid[(int)NextPoint.X][(int)NextPoint.Y][(int)NextPoint.Z]->Value;
-					if (current*previous <= 0) {
-						SignChangeFlag = true;
-						break;
-					}
-				}
-				if (SignChangeFlag) {
-					normals.Empty();
-					positions.Empty();
-					for(int Direction = 0; Direction < 3; Direction++)
-						for (int EdgeCounter = 0; EdgeCounter < 4; EdgeCounter++) {
-							CurrentEdgePos = CurrentPos + VoxelEdges[Direction][EdgeCounter];
-							currentEdge = edges[Direction][(int)CurrentEdgePos.X][(int)CurrentEdgePos.Y][(int)CurrentEdgePos.Z];
-							if(currentEdge!=nullptr){
-								normals.Add(currentEdge->Normal);
-								positions.Add((currentEdge->Position));
-
-							}
-						}
-
-					voxels[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] = new Vertex();
-					CurrentVertex = voxels[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-					Positions_container = new float[positions.Num()*3];
-					Normals_container = new float[normals.Num()*3];
-					CurrentVertex->Normal = FVector::ZeroVector;
-					for (int i = 0; i < normals.Num(); i++) {
-						Positions_container[i * 3] = positions[i].X;
-						Positions_container[i * 3 + 1] = positions[i].Y;
-						Positions_container[i * 3 + 2] = positions[i].Z;
-						Normals_container[i * 3] = normals[i].X;
-						Normals_container[i * 3 + 1] = normals[i].Y;
-						Normals_container[i * 3 + 2] = normals[i].Z;
-						CurrentVertex->Normal += normals[i];
-					}
-					qef_solve_from_points_3d(Positions_container, Normals_container, normals.Num(), Result);
-					delete[] Positions_container;
-					delete[] Normals_container;
-					CurrentVertex->Position.X = Result[0];
-					CurrentVertex->Position.Y = Result[1];
-					CurrentVertex->Position.Z = Result[2];
-					CurrentVertex->Position -= Chunk->ChunkBounds.GetCenter();
-					CurrentVertex->Normal.Normalize();
-					//Add normal
-
-				}
-			}
-	delete[] Result;
-	//Build mesh
-	//There we only use edges from 1 to 64, as the zero edge is used in the previous chunk, and BaseResolution+1th edge has voxels lying in the next chunk
-	int MaterialCount = 0;
-	//	rebuilding = true;
-		TArray<FVector>* Vertecies = new TArray<FVector>();
-		TArray<int32>* Indecies = new TArray<int32>();
-		TArray<FVector>* Normals = new TArray<FVector>();
-		TArray<FVector2D>* UVs = new TArray<FVector2D>();
-		TArray<FLinearColor>* Colors = new TArray<FLinearColor>();
-		TArray<FProcMeshTangent>* Tangents = new TArray<FProcMeshTangent>();
-		for (int Direction = 0; Direction < 3; Direction++) {
-			temp.Set(0, 0, 0);
-			temp.Component(Direction) = 1;
-			for (CurrentPos.X = 1; CurrentPos.X < BaseResolution + 1; CurrentPos.X++)
-				for (CurrentPos.Y = 1; CurrentPos.Y < BaseResolution + 1; CurrentPos.Y++)
-					for (CurrentPos.Z = 1; CurrentPos.Z < BaseResolution + 1; CurrentPos.Z++) {
-						ClockwiseFlag = false;
-						currentEdge = edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-						if (currentEdge != nullptr && (UMaterial*)currentEdge->Material == Material) {
-							if (grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value >= 0)
-								ClockwiseFlag = true;
-							for (int VoxelCounter = 0; VoxelCounter < 4; VoxelCounter++) {
-								CurrentVoxel = CurrentPos + NearestVoxels[Direction][VoxelCounter];
-								Vertecies->Add(voxels[(int)CurrentVoxel.X][(int)CurrentVoxel.Y][(int)CurrentVoxel.Z]->Position);
-								Normals->Add(voxels[(int)CurrentVoxel.X][(int)CurrentVoxel.Y][(int)CurrentVoxel.Z]->Normal);
-							}
-							if (ClockwiseFlag) {
-								Indecies->Add(Vertecies->Num() - 4);
-								Indecies->Add(Vertecies->Num() - 3);
-								Indecies->Add(Vertecies->Num() - 2);
-								Indecies->Add(Vertecies->Num() - 2);
-								Indecies->Add(Vertecies->Num() - 1);
-								Indecies->Add(Vertecies->Num() - 4);
-							}
-							else
-							{
-								Indecies->Add(Vertecies->Num() - 4);
-								Indecies->Add(Vertecies->Num() - 1);
-								Indecies->Add(Vertecies->Num() - 2);
-								Indecies->Add(Vertecies->Num() - 2);
-								Indecies->Add(Vertecies->Num() - 3);
-								Indecies->Add(Vertecies->Num() - 4);
-
-							}
-							UVs->Add(FVector2D(0, 0));
-							UVs->Add(FVector2D(0, 1));
-							UVs->Add(FVector2D(1, 1));
-							UVs->Add(FVector2D(1, 0));
-						}
-					}
 		}
-	//		Mesh->ClearMeshSection(MaterialCount);
-//	Normals->SetNumZeroed(Vertecies->Num());
-//	Colors->SetNumZeroed(Vertecies->Num());
-//	UVs->SetNumZeroed(Vertecies->Num());
-//	Tangents->SetNumZeroed(Vertecies->Num());
-
-	//Mesh->SetMaterial(0,)
-	for (int i = 0; i < BaseResolution+2; i++) {
-		for (int j = 0; j < BaseResolution+2; j++) {
-			for (int k = 0; k < BaseResolution+2; k++)
-				delete grid[i][j][k];
-		delete[] grid[i][j];
-		}
-		delete[] grid[i];
+			
 	}
-	delete[] grid;
-	for (int Direction = 0; Direction < 3; Direction++) {
-		for (CurrentPos.X = 0; CurrentPos.X < BaseResolution+2; CurrentPos.X++) {
-			for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution+2; CurrentPos.Y++) {
-				for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution+2; CurrentPos.Z++) {
-					if (edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] != nullptr)
-						delete edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-				}
-				delete[] edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y];
-			}
-			delete[] edges[Direction][(int)CurrentPos.X];
-		}
-		delete[] edges[Direction];
-	}
-	delete[] edges;
-
-	for (int i = 0; i < BaseResolution+1; i++) {
-		for (int j = 0; j < BaseResolution+1; j++) {
-			for (int k = 0; k < BaseResolution+1; k++)
-				if(voxels[i][j][k]!=nullptr)
-					delete voxels[i][j][k];
-			delete[] voxels[i][j];
-		}
-		delete[] voxels[i];
-	}
-	delete[] voxels;
-	hasEnded = true;
-	return uint32();
-}*/
 
 
-
-
-FMeshCalculationMultithread::FMeshCalculationMultithread()
-{
-}
-
-FMeshCalculationMultithread::~FMeshCalculationMultithread()
-{
-}
-
-void FMeshCalculationMultithread::BuildMesh(bool IsInitiating)
-{
-	OutputArray.SetNumZeroed(Chunk->MaterialList.Num());
-	if (IsInitiating) {
-		GridBuilding_CompleteEvent.Add(TGraphTask<FGridBuildingTask>::CreateTask(NULL, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(this));
-		while (!GetIsGridComplete());
-		for (int i = 0; i < Chunk->MaterialList.Num(); i++)
-			MeshSectionCalculation_CompleteEvents.Add(TGraphTask<FMeshDataBuildingTask>::CreateTask(NULL, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(i,this));
-		while (!AreCalculationsComplete());
-		for (int i = 0; i < Chunk->MaterialList.Num(); i++) {
-			Chunk->Mesh->CreateMeshSection_LinearColor(i, *OutputArray[i]->Vertecies, *OutputArray[i]->Indecies, *OutputArray[i]->Normals, *OutputArray[i]->UVs, *OutputArray[i]->Colors, *OutputArray[i]->Tangents, true);
-			Chunk->Mesh->SetMaterial(i, Chunk->MaterialList[i]);
-		}
-		GridBuilding_CompleteEvent.Empty();
-		MeshSectionCalculation_CompleteEvents.Empty();
-		ResetGridData();
-		EmptyOutput();
-
-	}
 	else {
-		Chunk->SetRebuilding(true);
-		GridBuilding_CompleteEvent.Add(TGraphTask<FGridBuildingTask>::CreateTask(NULL, ENamedThreads::GameThread).ConstructAndDispatchWhenReady(this));
-	}
-		
-}
+		VoxelVertexData current;
+		VoxelVertexData VerteciesValue[8];
+		FVector firstPoint, secondPoint;
+		FVector IntersectionPositions[12];
+		FVector Normals[12];
+		this->type = OctreeNodeType::Node_Leaf;
+		this->DrawInfo = new OctreeDrawInfo();
+		for (int i = 0; i < 8; i++) {
+			current = Chunk->CalcCSGAtPoint(Min + ((BoundingBox.GetExtent()*VoxelVertecies[i] * 2)));
+			VerteciesValue[i] = current;
+			if (current.first< 0) {//Still bugged as hell. Need some other condition for inside/outside checking
+				this->DrawInfo->corners |= 1<<i;
+			}
+		}
+		if (this->DrawInfo->corners == 0 || this->DrawInfo->corners == 255) {
+			if (nullptr != this->DrawInfo)
+			{
+				delete this->DrawInfo;
+				DrawInfo = nullptr;
+			}
+			return;
+		}
+		for (int i = 0; i < 8; i++) {
+			if (VerteciesValue[i].first > 0) {
+				DrawInfo->Materials[i] = -1;
+			}
+			else {
+				DrawInfo->Materials[i] = 0;
+			}
+		}
+		int counter = 0;
+		for (int i = 0; i < 12; i++) {
+			if (VerteciesValue[edgevmap[i][0]].first * VerteciesValue[edgevmap[i][1]].first <= 0) {
+				firstPoint = Min + VoxelVertecies[edgevmap[i][0]];
+				secondPoint = VoxelVertecies[edgevmap[i][1]] * minsize;
+				IntersectionPositions[counter] = ((firstPoint + (secondPoint*(AChunkMesh::lerpEdge(VerteciesValue[edgevmap[i][0]].first, VerteciesValue[edgevmap[i][1]].first)))));
+				if (VerteciesValue[edgevmap[i][0]].first <= 0) {
+					Normals[counter++] = (VerteciesValue[edgevmap[i][0]].second->CalculateGradientAtPoint(IntersectionPositions[counter]));
+				}
+				else {
+					Normals[counter++] = (VerteciesValue[edgevmap[i][1]].second->CalculateGradientAtPoint(IntersectionPositions[counter]));
+				}
+			}
+		}
+		for (int i = 0; i < counter; i++) {
+			DrawInfo->QEFpos[i * 3] = IntersectionPositions[i].X;
+			DrawInfo->QEFpos[i * 3 + 1] = IntersectionPositions[i].Y;
+			DrawInfo->QEFpos[i * 3 + 2] = IntersectionPositions[i].Z;
+			DrawInfo->QEFnormals[i * 3] = Normals[i].X;
+			DrawInfo->QEFnormals[i * 3 + 1] = Normals[i].Y;
+			DrawInfo->QEFnormals[i * 3 + 2] = Normals[i].Z;
+			DrawInfo->AverageNormal += Normals[i];
+		}
 
-bool FMeshCalculationMultithread::GetIsGridComplete()
-{
-	if (GridBuilding_CompleteEvent[0]->IsComplete()) {
-		return true;
+		float result[3];
+		DrawInfo->AverageNormal.Normalize();
+		qef_solve_from_points_3d(DrawInfo->QEFpos, DrawInfo->QEFnormals, counter, result);
+		DrawInfo->Position.X = result[0];
+		DrawInfo->Position.Y = result[1];
+		DrawInfo->Position.Z = result[2];
+		DrawInfo->Position -= Chunk->GetTransform().GetTranslation();
+		return;
 	}
-	else {
-		return false;
-	}
-}
 
-bool FMeshCalculationMultithread::AreCalculationsComplete()
-{
-	for (int i = 0; i < MeshSectionCalculation_CompleteEvents.Num(); i++)
-		if (!MeshSectionCalculation_CompleteEvents[i]->IsComplete())
-			return false;
-	return true;
-}
-
-void FMeshCalculationMultithread::BuildGrid()
-{
-	elapsed = 0;
-	TArray<FVector> normals;
-	TArray<FVector> positions;
-	FVector temp, NextPoint;
-	FVector CurrentPos;
-	FVector IntersectionPosition;
-	FVector CurrentEdgePos;
-	FVector CurrentVoxel;
-//	Vertex* CurrentVertex;
-	float relativePos; //Relative position of the edge's intersection point
-	float current, previous, next;//Temp floats used for calculateing SDF value at grid points
-	EdgeData* currentEdge;
-	ITerrainObjectInterface* currentObject = nullptr;
-	bool SignChangeFlag = false;
-	bool ClockwiseFlag = false;
-	//Init grid;
-	//Basic size = 64
-	//Basic size is the number of vertecies in one dimension of the chunk
-	//The number of grid points and edges is size+1
-	//Actually the number of edges is size or size+1, but for sake of easy implementaiton is always size+1
-	//Used number is size+2 so that space between chunks would also be covered
 	
-	ThisChunkData->grid = new GridData***[BaseResolution + 2];
-	for (int i = 0; i < BaseResolution + 2; i++) {
-		ThisChunkData->grid[i] = new GridData**[BaseResolution + 2];
-		for (int j = 0; j < BaseResolution + 2; j++) {
-			ThisChunkData->grid[i][j] = new GridData*[BaseResolution + 2];
-			for (int k = 0; k < BaseResolution + 2; k++)
-				ThisChunkData->grid[i][j][k] = new GridData();
-		}
-	}
-	//Init grid edges;
-	ThisChunkData->edges = new EdgeData****[3];
-	for (int Direction = 0; Direction < 3; Direction++) {
-		ThisChunkData->edges[Direction] = new EdgeData***[BaseResolution + 2];
-		for (CurrentPos.X = 0; CurrentPos.X < BaseResolution + 2; CurrentPos.X++) {
-			ThisChunkData->edges[Direction][(int)CurrentPos.X] = new EdgeData**[BaseResolution + 2];
-			for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution + 2; CurrentPos.Y++) {
-				ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y] = new EdgeData*[BaseResolution + 2];
-				for (CurrentPos.Z = 0; CurrentPos.Z< BaseResolution + 2; CurrentPos.Z++) {
-					ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] = nullptr;
-				}
-			}
-		}
-	}
-	ThisChunkData->voxels = new Vertex***[BaseResolution + 1];
-	for (int i = 0; i < BaseResolution + 1; i++) {
-		ThisChunkData->voxels[i] = new Vertex**[BaseResolution + 1];
-		for (int j = 0; j < BaseResolution + 1; j++) {
-			ThisChunkData->voxels[i][j] = new Vertex*[BaseResolution + 1];
-			for (int k = 0; k < BaseResolution + 1; k++)
-				ThisChunkData->voxels[i][j][k] = nullptr;
-		}
-	}
-	//Calculate values at grid points
-	CSG_TYPE_ENUM CurrentCSGOp;//Which CSG operation should be executed
-	FDateTime  previousTimeStamp;
-	for (CurrentPos.X = 0; CurrentPos.X < BaseResolution + 2; CurrentPos.X++)
-		for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution + 2; CurrentPos.Y++)
-			for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution + 2; CurrentPos.Z++) {
-				current = MAX_FLT;
-				previous = MAX_FLT;
-				currentObject = nullptr;
-				FVector pos = ((CurrentPos - 32)*UnitPerVoxel) + Chunk->ChunkBounds.GetCenter();
-				previousTimeStamp = FDateTime::MinValue();
-				for (ITerrainObjectInterface* obj : Chunk->Objects) {
-					current = (obj->CalculateSignedDistanceFunction(pos));
-					CurrentCSGOp = obj->GetCSGType();
-					switch (CurrentCSGOp) {
-					case CSG_TYPE_ENUM::CSG_OR: {
-						if (current < previous) {
-							if (obj->GetTimeStamp() >= previousTimeStamp) {
-								previousTimeStamp = obj->GetTimeStamp();
-								previous = current;
-								currentObject = obj;
-							}
-						}
-						break;
-					}
-					case CSG_TYPE_ENUM::CSG_DIFF: {
-						if ((-current) > previous) {
-							if (obj->GetTimeStamp() >= previousTimeStamp) {
-								previousTimeStamp = obj->GetTimeStamp();
-								currentObject = obj;
-								previous = -current;
-							}
-						}
-						break;
-					}
-					}
-				}
-
-				ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value = previous;
-				ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Object = currentObject;
-				ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Material = Chunk->MaterialList[0];
-
-			}
-
-	//For each edge, if there is a sign change, calculate position of the intersection point and normal at this point;
-	//new edge is created only if there is an intersection, else this edge is nullptr;
-	//Used number is size + 2 as we need to look through every edge
-	for (int Direction = 0; Direction < 3; Direction++) {
-		temp.Set(0, 0, 0);
-		temp.Component(Direction) = 1;
-		for (CurrentPos.X = 0; CurrentPos.X < BaseResolution + 2; CurrentPos.X++)
-			for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution + 2; CurrentPos.Y++)
-				for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution + 2; CurrentPos.Z++) {
-					NextPoint = CurrentPos + temp;
-					if (NextPoint.GetMax() > BaseResolution + 1)
-						continue;
-					current = ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value;
-					next = ThisChunkData->grid[(int)NextPoint.X][(int)NextPoint.Y][(int)NextPoint.Z]->Value;
-					if (current*next <= 0) {
-						ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] = new EdgeData();
-						currentEdge = ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-						relativePos = lerpEdge(current, next);
-						IntersectionPosition = (((CurrentPos + (temp*relativePos)) - 32)*UnitPerVoxel)/* - (ChunkSize / 2)*/ + Chunk->ChunkBounds.GetCenter();
-						currentEdge->Position = IntersectionPosition;
-						if (current <= 0)
-							currentObject = ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Object;
-						else
-							currentObject = ThisChunkData->grid[(int)NextPoint.X][(int)NextPoint.Y][(int)NextPoint.Z]->Object;
-
-						currentEdge->Normal = currentObject->CalculateGradientAtPoint(IntersectionPosition);
-						currentEdge->Material = ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Material;
-					}
-				}
-	}
-
-//	return ChunkData();
-}
-
-MeshData* FMeshCalculationMultithread::CalculateMeshSection(int32 SectionNumber)
-{
-	FVector temp;
-	FVector CurrentVoxel;
-	bool ClockwiseFlag;
-	EdgeData* currentEdge;
-	FVector CurrentPos;
-	FVector CurrentEdgePos;
-	FVector NextPoint;
-	float* Positions_container;
-	float* Normals_container;
-	float* Result = new float[3];
-	bool SignChangeFlag;
-	Vertex* CurrentVertex;
-	TArray<FVector> normals, positions;
-	//Calculating vertex position in each voxel
-	//Number of voxels is size+1
-	for (CurrentPos.X = 0; CurrentPos.X < BaseResolution + 1; CurrentPos.X++)
-		for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution + 1; CurrentPos.Y++)
-			for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution + 1; CurrentPos.Z++) {
-				previous = ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value;
-				SignChangeFlag = false;
-				for (int VertexCounter = 1; VertexCounter < 8; VertexCounter++) {
-					NextPoint = CurrentPos + VoxelVertecies[VertexCounter];
-					current = ThisChunkData->grid[(int)NextPoint.X][(int)NextPoint.Y][(int)NextPoint.Z]->Value;
-					if (current*previous <= 0) {
-						SignChangeFlag = true;
-						break;
-					}
-				}
-				if (SignChangeFlag) {
-					normals.Empty();
-					positions.Empty();
-					for (int Direction = 0; Direction < 3; Direction++)
-						for (int EdgeCounter = 0; EdgeCounter < 4; EdgeCounter++) {
-							CurrentEdgePos = CurrentPos + VoxelEdges[Direction][EdgeCounter];
-							currentEdge = ThisChunkData->edges[Direction][(int)CurrentEdgePos.X][(int)CurrentEdgePos.Y][(int)CurrentEdgePos.Z];
-							if (currentEdge != nullptr) {
-								normals.Add(currentEdge->Normal);
-								positions.Add((currentEdge->Position));
-
-							}
-						}
-
-					ThisChunkData->voxels[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] = new Vertex();
-					CurrentVertex = ThisChunkData->voxels[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-					Positions_container = new float[positions.Num() * 3];
-					Normals_container = new float[normals.Num() * 3];
-					CurrentVertex->Normal = FVector::ZeroVector;
-					for (int i = 0; i < normals.Num(); i++) {
-						Positions_container[i * 3] = positions[i].X;
-						Positions_container[i * 3 + 1] = positions[i].Y;
-						Positions_container[i * 3 + 2] = positions[i].Z;
-						Normals_container[i * 3] = normals[i].X;
-						Normals_container[i * 3 + 1] = normals[i].Y;
-						Normals_container[i * 3 + 2] = normals[i].Z;
-						CurrentVertex->Normal += normals[i];
-					}
-					qef_solve_from_points_3d(Positions_container, Normals_container, normals.Num(), Result);
-					delete[] Positions_container;
-					delete[] Normals_container;
-					CurrentVertex->Position.X = Result[0];
-					CurrentVertex->Position.Y = Result[1];
-					CurrentVertex->Position.Z = Result[2];
-					CurrentVertex->Position -= Chunk->ChunkBounds.GetCenter();
-					CurrentVertex->Normal.Normalize();
-					//Add normal
-
-				}
-			}
-	delete[] Result;
-	//Build mesh
-	//There we only use edges from 1 to 64, as the zero edge is used in the previous chunk, and BaseResolution+1th edge has voxels lying in the next chunk
-	int MaterialCount = 0;
-	//	rebuilding = true;
-	TArray<FVector>* Vertecies = new TArray<FVector>();
-	TArray<int32>* Indecies = new TArray<int32>();
-	TArray<FVector>* Normals = new TArray<FVector>();
-	TArray<FVector2D>* UVs = new TArray<FVector2D>();
-	TArray<FLinearColor>* Colors = new TArray<FLinearColor>();
-	TArray<FProcMeshTangent>* Tangents = new TArray<FProcMeshTangent>();
-	/*		if((Mesh->GetNumSections()!=0) &&(Mesh->GetProcMeshSection(MaterialCount)!=nullptr))
-	Mesh->GetProcMeshSection(MaterialCount)->Reset();*/
-	for (int Direction = 0; Direction < 3; Direction++) {
-		temp.Set(0, 0, 0);
-		temp.Component(Direction) = 1;
-		for (CurrentPos.X = 1; CurrentPos.X < BaseResolution + 1; CurrentPos.X++)
-			for (CurrentPos.Y = 1; CurrentPos.Y < BaseResolution + 1; CurrentPos.Y++)
-				for (CurrentPos.Z = 1; CurrentPos.Z < BaseResolution + 1; CurrentPos.Z++) {
-					ClockwiseFlag = false;
-					currentEdge = ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-					if (currentEdge != nullptr && (UMaterial*)currentEdge->Material == Chunk->MaterialList[SectionNumber]) {
-						if (ThisChunkData->grid[(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z]->Value >= 0)
-							ClockwiseFlag = true;
-						for (int VoxelCounter = 0; VoxelCounter < 4; VoxelCounter++) {
-							CurrentVoxel = CurrentPos + NearestVoxels[Direction][VoxelCounter];
-							Vertecies->Add(ThisChunkData->voxels[(int)CurrentVoxel.X][(int)CurrentVoxel.Y][(int)CurrentVoxel.Z]->Position);
-							Normals->Add(ThisChunkData->voxels[(int)CurrentVoxel.X][(int)CurrentVoxel.Y][(int)CurrentVoxel.Z]->Normal);
-						}
-						if (ClockwiseFlag) {
-							Indecies->Add(Vertecies->Num() - 4);
-							Indecies->Add(Vertecies->Num() - 3);
-							Indecies->Add(Vertecies->Num() - 2);
-							Indecies->Add(Vertecies->Num() - 2);
-							Indecies->Add(Vertecies->Num() - 1);
-							Indecies->Add(Vertecies->Num() - 4);
-						}
-						else
-						{
-							Indecies->Add(Vertecies->Num() - 4);
-							Indecies->Add(Vertecies->Num() - 1);
-							Indecies->Add(Vertecies->Num() - 2);
-							Indecies->Add(Vertecies->Num() - 2);
-							Indecies->Add(Vertecies->Num() - 3);
-							Indecies->Add(Vertecies->Num() - 4);
-
-						}
-						UVs->Add(FVector2D(0, 0));
-						UVs->Add(FVector2D(0, 1));
-						UVs->Add(FVector2D(1, 1));
-						UVs->Add(FVector2D(1, 0));
-					}
-				}
-	}
-	
-	return new MeshData(Vertecies,Indecies,Normals,UVs,new TArray<FLinearColor>(),new TArray<FProcMeshTangent>());
-}
-
-void FMeshCalculationMultithread::ResetGridData()
-{
-	FVector CurrentPos;
-	for (int i = 0; i < BaseResolution + 2; i++) {
-		for (int j = 0; j < BaseResolution + 2; j++) {
-			for (int k = 0; k < BaseResolution + 2; k++)
-				delete ThisChunkData->grid[i][j][k];
-			delete[]  ThisChunkData->grid[i][j];
-		}
-		delete[] ThisChunkData->grid[i];
-	}
-	delete[] ThisChunkData->grid;
-	for (int Direction = 0; Direction < 3; Direction++) {
-		for (CurrentPos.X = 0; CurrentPos.X < BaseResolution + 2; CurrentPos.X++) {
-			for (CurrentPos.Y = 0; CurrentPos.Y < BaseResolution + 2; CurrentPos.Y++) {
-				for (CurrentPos.Z = 0; CurrentPos.Z < BaseResolution + 2; CurrentPos.Z++) {
-					if (ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z] != nullptr)
-						delete ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y][(int)CurrentPos.Z];
-				}
-				delete[] ThisChunkData->edges[Direction][(int)CurrentPos.X][(int)CurrentPos.Y];
-			}
-			delete[] ThisChunkData->edges[Direction][(int)CurrentPos.X];
-		}
-		delete[] ThisChunkData->edges[Direction];
-	}
-	delete[] ThisChunkData->edges;
-
-	for (int i = 0; i < BaseResolution + 1; i++) {
-		for (int j = 0; j < BaseResolution + 1; j++) {
-			for (int k = 0; k < BaseResolution + 1; k++)
-				if (ThisChunkData->voxels[i][j][k] != nullptr)
-					delete ThisChunkData->voxels[i][j][k];
-			delete[] ThisChunkData->voxels[i][j];
-		}
-		delete[] ThisChunkData->voxels[i];
-	}
-	delete[] ThisChunkData->voxels;
-
-}
-
-FMeshCalculationMultithread::FGridBuildingTask::FGridBuildingTask(FMeshCalculationMultithread* ThreadDataContainer)
-{
-	base = ThreadDataContainer;
-}
-
-void FMeshCalculationMultithread::FGridBuildingTask::DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef & CompletionGraph)
-{
-	base->BuildGrid();
-}
-
-FMeshCalculationMultithread::FMeshDataBuildingTask::FMeshDataBuildingTask(int32 SectionNumber, FMeshCalculationMultithread* ThreadDataContainer)
-{
-	sectionNumber = SectionNumber;
-	base = ThreadDataContainer;
-}
-
-void FMeshCalculationMultithread::FMeshDataBuildingTask::DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef & CompletionGraph)
-{
-	base->OutputArray[sectionNumber] =  base->CalculateMeshSection(sectionNumber);
 }
